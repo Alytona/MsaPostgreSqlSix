@@ -25,11 +25,11 @@ namespace PostgreSqlDataAccess
         {
             get; set;
         }
+/*        
         public DbSet<string> TableNames
         {
             get; set;
         }
-
         class QueryQuantity
         {
             public int? Value
@@ -50,7 +50,7 @@ namespace PostgreSqlDataAccess
         {
             get; set;
         }
-
+*/
         /// <summary>
         /// Количество записей в таблице событий.
         /// Сделано отдельное свойство, так как Count - метод расширения и в проектах на C++\CLI недоступен 
@@ -58,8 +58,10 @@ namespace PostgreSqlDataAccess
 
         public int ParameterEventsCount
         {
-            get 
+            get
             {
+                return 0;
+/*                
                 List<string> tableNames = new List<string>();
                 var result = TableNames.FromSqlRaw( "SELECT table_name FROM information_schema.tables WHERE table_schema NOT IN ('information_schema','pg_catalog') AND table_name like 'var_%';" );
                 foreach (string tableName in result) {
@@ -77,6 +79,7 @@ namespace PostgreSqlDataAccess
                     }
                 }
                 return count;
+*/                
             }
         }
 

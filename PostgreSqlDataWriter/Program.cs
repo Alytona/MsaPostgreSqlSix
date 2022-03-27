@@ -1,10 +1,10 @@
-﻿using namespace System;
-using namespace System.Text;
-using namespace System.Collections.Generic;
-using namespace System.Threading;
-using namespace System.Threading.Tasks;
+﻿using System;
+using System.Text;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
-using namespace PostgreSqlDataAccess;
+using PostgreSqlDataAccess;
 
 namespace PostgreSqlDataWriter
 {
@@ -85,7 +85,7 @@ namespace PostgreSqlDataWriter
             {
                 ParameterEvent parameterEvent = new ParameterEvent();
                 parameterEvent.ParameterId = i % 1000;
-                parameterEvent.Time = DateTime.Now; // currentTime;
+                parameterEvent.Time = DateTime.UtcNow; // currentTime;
                 parameterEvent.Value = 0.011F;
                 parameterEvent.Status = 11;
                 Events.Add(parameterEvent);
@@ -103,7 +103,7 @@ namespace PostgreSqlDataWriter
 
     class Program
     {
-        int main()
+        static void Main(string[] args)
         {
             // Количество потоков добавления записей
             const int WRITERS_QUANTITY = 3;
@@ -133,11 +133,11 @@ namespace PostgreSqlDataWriter
                 context = new MonitoringDb(connectionString);
         
                 // Установка таймаута в секундах
-                context.Database.CommandTimeout = 30;
+                // context.Database.CommandTimeout = 30;
         
                 // EF6 создаёт БД, если её не существует
-                if (context.Database.CreateIfNotExists())
-                    cout << "Database created" << endl;
+                if (context.Database.EnsureCreated())
+                    Console.WriteLine( "Database created" );
         
                 // Заполнение таблицы параметров
                 //for (int i = 1; i <= 1000; i++) 
@@ -164,19 +164,19 @@ namespace PostgreSqlDataWriter
                 int counter2 = 0;
         
                 // Размер порции событий
-                int quantity = 10000;
+                int quantity = 1000; // 10000
         
                 DateTime startTime;
                 try {
                     // Создаём объект, который будет выполнять добавление событий в БД
                     writeAdapter = new EventsWriteAdapter( connectionString, WRITERS_QUANTITY, INSERT_SIZE, TRANSACTION_SIZE);
                     // Добавляем обработчик события окончания добавления порции записей
-                    writeAdapter.OnStored += new GroupRecordsWriteAdapter.StoredEventHandler(&logErrors);
+                    writeAdapter.OnStored += new GroupRecordsWriteAdapter.StoredEventHandler( logErrors );
         
                     // Создаём объект, который будет выполнять отслеживание длины очереди событий
                     logger = new WritingQueueLengthLogger(writeAdapter);
                     // Добавляем обработчик события, которое вызывается при получении очередного значения длины очереди 
-                    logger.OnLogged += new WritingQueueLengthLogger.LogQueueLenEventHandler(&logQueueLen);
+                    logger.OnLogged += new WritingQueueLengthLogger.LogQueueLenEventHandler( logQueueLen );
         
                     // Создаём порцию событий.
                     // Порция используется на все операции одна, чтобы не исключить из замеров время на её создание
@@ -208,20 +208,20 @@ namespace PostgreSqlDataWriter
                     Console.Write(DateTime.Now.ToString("HH:mm:ss.fff "));
                     Console.WriteLine("Disposing adapter ...");
                     if (writeAdapter != null)
-                        delete writeAdapter;
+                        writeAdapter.Dispose();
         
                     Console.Write(DateTime.Now.ToString("HH:mm:ss.fff "));
                     Console.WriteLine("done.");
         
                     // Объект, отслеживавший состояние очереди тоже освобождаем, ведь поток отслеживания нужно корректно остановить
                     if (logger != null)
-                        delete logger;
+                        logger.Dispose();
                 }
         
                 // Замеряем время окончания добавления
                 DateTime endTime = DateTime.Now;
                 Console.WriteLine("Writing duration is " + (endTime - startTime).TotalMilliseconds + " milliseconds.");
-        
+/*        
                 // Считаем время, потраченное на запись 10000 событий
                 // Чтобы определить время на запись 50000, надо просто умножить на 5.
                 double timePerTenThousand = (double)(endTime - startTime).TotalMilliseconds / (counter2 * quantity / 10000);
@@ -244,6 +244,7 @@ namespace PostgreSqlDataWriter
                 // Console.WriteLine("We have written " + (endEventId - startEventId) + " event(s).");
                 // Выводим количество записей, которое должно было добавиться
                 Console.WriteLine("We have written " + counter2 * quantity + " event(s).");
+*/                
             }
             catch (System.Exception error)
             {
@@ -255,7 +256,7 @@ namespace PostgreSqlDataWriter
                 Console.Write(DateTime.Now.ToString("HH:mm:ss.fff "));
                 Console.WriteLine("Deleting of the DB connection.");
                 if (context != null)
-                    delete context;
+                    context.Dispose();
                 Console.WriteLine("The DB connection was deleted.");
             }
         
@@ -268,7 +269,7 @@ namespace PostgreSqlDataWriter
         /// Метод для вывода в консоль длины очереди
         /// <param name="queueLen">Количество событий в очереди</param>
         /// </summary>
-        private void logQueueLen (unsigned int preparedQueueLen, unsigned int storingQueueLen, unsigned int errorsQuantity )
+        private static void logQueueLen (uint preparedQueueLen, uint storingQueueLen, uint errorsQuantity )
         {
             Console.Write( DateTime.Now.ToString( "HH:mm:ss.fff " ) );
             // Console.WriteLine( "Queue length is " + (preparedQueueLen + storingQueueLen - errorsQuantity));
@@ -280,13 +281,13 @@ namespace PostgreSqlDataWriter
         /// <param name="storedCount">Количество добавленных записей</param>
         /// <param name="errors">Коллекция ошибок</param>
         /// </summary>
-        private void logErrors (unsigned int storedCount, List <Exception> errors)
+        private static void logErrors (uint storedCount, List <Exception> errors)
         {
             // Если коллекция ошибок не пуста, выводим их в консоль
             if (errors != null && errors.Count > 0) {
                 Console.Write( DateTime.Now.ToString("HH:mm:ss.fff ") );
                 Console.WriteLine( "There are errors!" );
-                auto enumerator = errors.GetEnumerator();
+                var enumerator = errors.GetEnumerator();
                 do {
                     if (enumerator.Current != null)
                     {
@@ -300,7 +301,7 @@ namespace PostgreSqlDataWriter
          /// Вывод исключения в консоль
          /// Выводит переданное исключение и всю цепочку InnerException
          /// </summary>
-         public void reportException(Exception error)
+         public static void reportException(Exception error)
          {
              // Отступ, для наглядности
              StringBuilder indentBuilder = new StringBuilder( "" );
