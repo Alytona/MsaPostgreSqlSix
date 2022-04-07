@@ -92,10 +92,8 @@ namespace PostgreSqlDataAccess
             uint insertsCounter = 0;
             uint storedCounter = 0;
 
-            uint queryRowsCounter;
-
             // Берём у построителя очередной запрос
-            string query = InsertMaker.nextQuery(out queryRowsCounter);
+            string query = InsertMaker.nextQuery(out uint queryRowsCounter);
             // И пока он не вернёт нам null
             while (query != null)
             {

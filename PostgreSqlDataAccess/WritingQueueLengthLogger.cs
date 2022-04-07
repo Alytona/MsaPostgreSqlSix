@@ -73,7 +73,7 @@ namespace PostgreSqlDataAccess
             {
                 // Вызываем событие с текущей длиной очереди
                 OnLogged?.Invoke( EventsWriteAdapterInstance.PreparedLen, EventsWriteAdapterInstance.StoringQueueLen, EventsWriteAdapterInstance.ErrorsQuantity );
-                Thread.Sleep( 300 );
+                Task.Delay( 300 ).Wait();
 
                 // Осторожно читаем состояние потока, чтобы проверить, не пора ли заканчивать
                 lock (ThreadStateLock)
