@@ -1,8 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 
 namespace PostgreSqlDataAccess
@@ -20,7 +17,7 @@ namespace PostgreSqlDataAccess
         /// <summary>
         /// Признак того, что подключение к БД установлено
         /// </summary>
-        bool DbInited = false;
+        bool DbInited;
 
         /// <summary>
         /// Количество операторов добавления в транзакции
@@ -110,6 +107,10 @@ namespace PostgreSqlDataAccess
                     insertResultCounter += (uint)queryResult;
                     storedCounter += (uint)queryResult;
                 }
+                else
+                {
+                    OnError?.Invoke( queryRowsCounter );
+                }
 
                 // Считаем количество выполненных запросов, если достигнут размер транзакции - закрываем её
                 if (++insertsCounter == TransactionSize)
@@ -117,7 +118,7 @@ namespace PostgreSqlDataAccess
                     // Закрываем транзакцию
                     DbContext.SaveChanges();
                     // Сообщаем о том, что сколько-то записей добавлено
-                    OnStored( storedCounter );
+                    OnStored?.Invoke( storedCounter );
 
                     // Чистим счётчики записей и добавлений
                     storedCounter = 0;
@@ -132,7 +133,7 @@ namespace PostgreSqlDataAccess
                 DbContext.SaveChanges();
 
             // Сообщаем о том, что сколько-то записей добавлено
-            OnStored( storedCounter );
+            OnStored?.Invoke( storedCounter );
 
             // Возвращаем общее количество добавленных записей
             return insertResultCounter;
@@ -151,7 +152,7 @@ namespace PostgreSqlDataAccess
 
         #region Поддержка интерфейса IDisposable, освобождение неуправляемых ресурсов
 
-        private bool disposedValue = false; // Для определения излишних вызовов, чтобы выполнять Dispose только один раз
+        private bool disposedValue; // Для определения излишних вызовов, чтобы выполнять Dispose только один раз
 
         /// <summary>
         /// Метод, выполняющий освобождение неуправляемых ресурсов
