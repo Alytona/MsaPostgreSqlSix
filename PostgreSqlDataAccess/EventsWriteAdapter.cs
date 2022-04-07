@@ -5,6 +5,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Sphere;
+    
 namespace PostgreSqlDataAccess
 {
     class WriterSlot
@@ -24,14 +26,14 @@ namespace PostgreSqlDataAccess
     /// <summary>
     /// Реализация класса группового добавления записей для таблицы ParameterEvents
     /// </summary>
-    public class EventsWriteAdapter : GroupRecordsWriteAdapter, IDisposable
+    public class EventsWriteAdapter : GroupRecordsWriteAdapter
     {
         readonly ParameterSectionsController SectionsController;
 
         /// <summary>
         /// Накопительный буфер объектов, ожидающих записи в БД
         /// </summary>
-        readonly EventsPrepareBuffer PrepareBuffer = new EventsPrepareBuffer();
+        readonly EventsPrepareBuffer<SphereDataTypesScalarSW_t> PrepareBuffer = new();
 
         /// <summary>
         /// Конструктор
@@ -63,21 +65,21 @@ namespace PostgreSqlDataAccess
         protected override void storingIteration ()
         {
             // Переключаем буферы - в накопительном буфере создаём новую коллекцию, а для того, что накопилось вызываем сохранение
-            List<ParameterEvent> eventsToStore = PrepareBuffer.replaceBufferIfNotEmpty();
+            List<SphereDataTypesScalarSW_t> eventsToStore = PrepareBuffer.replaceBufferIfNotEmpty();
             uint totalEventsQuantity = (uint)(eventsToStore?.Count ?? 0);
             if (totalEventsQuantity == 0)
             {
                 Storing = false;
 
                 // Если буфер был пустым, надо выполнить задержку
-                Thread.Sleep( 50 );
+                Task.Delay( 50 ).Wait();
             }
             else 
             {
                 Storing = true;
 
                 // Инициализируем количество несохраненных записей в буфере сохранения
-                BufferRemainderCounter.Value = totalEventsQuantity;
+                BufferRemainderCounter.Value = totalEventsQuantity; 
                 List<Exception> errors = new List<Exception>();
 
                 SectionsController.fillParameterSections( eventsToStore );
@@ -100,11 +102,8 @@ namespace PostgreSqlDataAccess
 
                 Console.WriteLine( $"collection size: {SectionsController.FilledParametersSet.Values.First().Events.Count}" );
 
-                int index = 0;
                 foreach (ParameterValues eventsCollection in SectionsController.FilledParametersSet.Values)
                 {
-                    // Console.WriteLine( $"collection {index++} size: {eventsCollection.Events.Count}" );
-
                     uint startIndex = 0;
                     while (startIndex < eventsCollection.Events.Count)
                     {
@@ -174,82 +173,22 @@ namespace PostgreSqlDataAccess
         /// Добавляет записи в накопительный буфер
         /// </summary>
         /// <param name="eventsToStore">Коллекция записей для добавления</param>
-        public void StoreEvents (List<ParameterEvent> eventsToStore)
+        public void StoreEvents (List<SphereDataTypesScalarSW_t> eventsToStore)
         {
             PrepareBuffer.addEvents( eventsToStore );
             Storing = true;
         }
 
         /// <summary>
-        /// Запись буфера сохранения в БД
+        /// Добавляет записи в накопительный буфер
         /// </summary>
-        /// <param name="eventsToStore">Буфер сохранения</param>
-        /// <param name="errors">Коллекция ошибок, возникших при сохранении</param>
-        /// <returns>Количество записей, добавленных в БД</returns>
-        private uint storeEventsTask (ParameterValues eventsCollection, List<Exception> errors)
+        /// <param name="eventsToStore">Коллекция записей для добавления</param>
+        public void StoreEvent (SphereDataTypesScalarSW_t eventToStore)
         {
-            uint totalQuantity = (uint)eventsCollection.Events.Count;
-
-            // Считаем количество записей, приходящееся на один писатель
-            uint baseQuantityPerWriter = (totalQuantity - 1) / WritersQuantity;
-
-            // Считаем, на сколько писателей придётся на одну запись больше
-            uint remainder = (totalQuantity - 1) - baseQuantityPerWriter * WritersQuantity;
-
-            // Индекс в коллекции, с которого текущий писатель начнёт сохранение
-            uint startIndex = 0;
-
-            // Количество добавленных записей
-            uint insertedCount = 0;
-
-            // Коллекция заданий
-            List<Task<uint>> tasks = new List<Task<uint>>();
-            try
-            {
-                for (int i = 0; i < WritersQuantity; i++)
-                {
-                    // Определяем количество записей, которое должен будет сохранить этот писатель
-                    uint quantity = baseQuantityPerWriter;
-                    if (i <= remainder)
-                        quantity++;
-                    if (quantity == 0)
-                        break;
-
-                    (Writers[i] as EventsGroupRecordsWriter).setParameterId( eventsCollection.ParameterSection.ParameterId );
-
-                    // Создаём задание для писателя
-                    tasks.Add( runWriter( eventsCollection.Events, Writers[i], startIndex, quantity ) );
-
-                    // Сдвигаем стартовый индекс
-                    startIndex += quantity;
-                }
-
-                // Ожидаем завершения заданий и собираем количество сохраненных записей
-                foreach (Task<uint> task in tasks)
-                {
-                    task.Wait();
-                    insertedCount += task.Result;
-                }
-            }
-            catch (Exception error)
-            {
-                // Если произошла ошибка, добавляем её в коллекцию ошибок
-                errors.Add( error );
-
-                // Если ошибка произошла в каком-то задании, тоже добавляем её в коллекцию ошибок
-                foreach (Task<uint> task in tasks)
-                {
-                    if (task.Exception != null)
-                        errors.Add( task.Exception );
-                }
-            }
-            finally
-            {
-                // Опускаем флаг записи в буфера сохранения
-                // Storing = false;
-            }
-            return insertedCount;
+            PrepareBuffer.addEvent( eventToStore );
+            Storing = true;
         }
+            
         /// <summary>
         /// Запись буфера сохранения в БД
         /// </summary>
@@ -341,7 +280,7 @@ namespace PostgreSqlDataAccess
         /// <param name="startIndex">Индекс записи, с которой нужно начать добавление</param>
         /// <param name="quantity">Количество записей, которые нужно добавить</param>
         /// <returns>Созданное задание</returns>
-        Task<uint> runWriter (List<ParameterEvent> eventsToStore, AGroupRecordsWriter writer, uint startIndex, uint quantity)
+        Task<uint> runWriter (List<SphereDataTypesScalarSW_t> eventsToStore, AGroupRecordsWriter writer, uint startIndex, uint quantity)
         {
             // Приведение типа коллекции
             IList<IGroupInsertableRecord> eventsToStoreA = eventsToStore.Cast<IGroupInsertableRecord>().ToList();
@@ -400,47 +339,5 @@ namespace PostgreSqlDataAccess
             } );
             return task;
         }
-
-
-        #region Поддержка интерфейса IDisposable, освобождение неуправляемых ресурсов
-
-        private bool disposedValue = false; // Для определения излишних вызовов, чтобы выполнять Dispose только один раз
-
-        /// <summary>
-        /// Метод, выполняющий освобождение неуправляемых ресурсов
-        /// </summary>
-        /// <param name="disposing">Признак того, что вызов метода выполнен не из финализатора</param>
-        protected virtual void Dispose (bool disposing)
-        {
-            // Если Dispose ещё не вызывался
-            if (!disposedValue)
-            {
-                // Если вызов выполнен не из финализатора
-                if (disposing)
-                {
-                    // Ждем окончания записи буфера сохранения
-                    WaitForStoring();
-
-                    // Сообщаем основному потоку, что надо заканчиваться
-                    _storingThread.terminate();
-
-                    // Останавливаем писателей
-                    for (int i = 0; i < WritersQuantity; i++)
-                    {
-                        Writers[i]?.Dispose();
-                    }
-
-                    // Ждём завершения основного потока
-                    _storingThread.waitForTermination();
-                }
-                // Больше не выполнять
-                disposedValue = true;
-            }
-        }
-        public void Dispose ()
-        {
-            Dispose( true );
-        }
-        #endregion
     }
 }

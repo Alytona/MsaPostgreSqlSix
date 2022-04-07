@@ -1,14 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
-using Microsoft.EntityFrameworkCore;
-
-// using System.Data.Entity;
-
-// using Microsoft.Data.SqlClient;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore;
+using System.Data;
 
 namespace PostgreSqlDataAccess
 {
@@ -25,61 +18,39 @@ namespace PostgreSqlDataAccess
         {
             get; set;
         }
-/*        
-        public DbSet<string> TableNames
+        public DbSet<TableName> TableNames
         {
             get; set;
         }
-        class QueryQuantity
-        {
-            public int? Value
-            {
-                get;
-            }
-
-            public bool HasValue => Value.HasValue;
-            
-            public QueryQuantity(int? value)
-            {
-                Value = value;
-            }
-            
-        }
-
-        private DbSet<QueryQuantity> QueryQuantities
-        {
-            get; set;
-        }
-*/
-        /// <summary>
-        /// Количество записей в таблице событий.
-        /// Сделано отдельное свойство, так как Count - метод расширения и в проектах на C++\CLI недоступен 
-        /// </summary>
 
         public int ParameterEventsCount
         {
             get
             {
-                return 0;
-/*                
-                List<string> tableNames = new List<string>();
-                var result = TableNames.FromSqlRaw( "SELECT table_name FROM information_schema.tables WHERE table_schema NOT IN ('information_schema','pg_catalog') AND table_name like 'var_%';" );
-                foreach (string tableName in result) {
-                    if (tableName.IndexOf( '_', 0 ) != -1 && tableName.IndexOf( '_', 4 ) == -1)
-                        tableNames.Add( tableName );
-                }
+                var connection = this.Database.GetDbConnection();
+                if (connection.State != ConnectionState.Open)
+                    connection.Open();
+
+                string query =
+                    "SELECT table_name FROM information_schema.tables WHERE table_schema NOT IN ('information_schema','pg_catalog') AND table_name similar to 'var_\\d*'";
+            
+                var tableNames 
+                    = TableNames.FromSqlRaw( query ).Select( i =>  i.Value ).ToList();
+
                 int count = 0;
                 foreach (string tableName in tableNames)
                 {
-                    var quantityQueryResult = QueryQuantities.FromSqlRaw( "select max(event_id) - min(event_id) + 1 from " + tableName + ";" ).Select( i => i.Value );
-                    foreach (int? quantity in quantityQueryResult )
+                    using (var command = connection.CreateCommand())
                     {
+                        command.CommandText = $"select max(event_id) - min(event_id) + 1 from {tableName};";
+                        command.CommandType = CommandType.Text;
+
+                        int? quantity = (int?)command.ExecuteScalar();
                         if (quantity.HasValue)
                             count += quantity.Value;
                     }
                 }
                 return count;
-*/                
             }
         }
 
@@ -94,18 +65,23 @@ namespace PostgreSqlDataAccess
         /// Конструктор
         /// </summary>
         /// <param name="connectionString">Строка с параметрами соединения с сервером БД</param>
-        public MonitoringDb (string connectionString) //  : base( new Npgsql.NpgsqlConnection( connectionString ), contextOwnsConnection: true )
+        public MonitoringDb (string connectionString, uint timeout = 0)
         {
             _connectionString = connectionString;
             
             // this.Database.Log += LogToConsole;
-
+            // ChangeTracker
+                
             // Выключаем автоматический запуск DetectChanges()
+            ChangeTracker.AutoDetectChangesEnabled = false;
 //            Configuration.AutoDetectChangesEnabled = false;
             // Выключаем автоматическую валидацию при вызове SaveChanges()
-//            Configuration.ValidateOnSaveEnabled = false;
+            // ConfigureOptions..ValidateOnSaveEnabled = false;
             // Выключаем создание прокси-экземпляров сущностей
-//            Configuration.ProxyCreationEnabled = false;
+            // ChangeTracker.ProxyCreationEnabled = false;
+
+            if (timeout != 0)
+                Database.SetCommandTimeout( (int)timeout );
         }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)

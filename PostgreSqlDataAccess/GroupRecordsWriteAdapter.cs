@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -61,16 +59,16 @@ namespace PostgreSqlDataAccess
     /// <summary>
     /// Потокобезопасный буфер, в котором события накапливаются перед записью
     /// </summary>
-    class EventsPrepareBuffer
+    class EventsPrepareBuffer<TEventType>
     {
         /// <summary>
         /// Коллекция, в которой хранятся записи буфера
         /// </summary>
-        List<ParameterEvent> _events = new List<ParameterEvent>();
+        private List<TEventType> _events = new();
         /// <summary>
         /// Блокировка для потокобезопасного доступа к буферу
         /// </summary>
-        readonly object _eventsLock = new object();
+        readonly object _eventsLock = new();
 
         /// <summary>
         /// Количество записей в буфере
@@ -80,9 +78,7 @@ namespace PostgreSqlDataAccess
             get
             {
                 lock (_eventsLock)
-                {
                     return (uint)_events.Count;
-                }
             }
         }
 
@@ -92,15 +88,15 @@ namespace PostgreSqlDataAccess
         /// Если старый буфер пуст, то просто возвращается null
         /// </summary>
         /// <returns>Ссылка на старый буфер</returns>
-        public List<ParameterEvent> replaceBufferIfNotEmpty ()
+        public List<TEventType> replaceBufferIfNotEmpty ()
         {
             lock (_eventsLock)
             {
                 if (_events.Count == 0)
                     return null;
 
-                List<ParameterEvent> eventsToStore = _events;
-                _events = new List<ParameterEvent>();
+                List<TEventType> eventsToStore = _events;
+                _events = new List<TEventType>();
                 return eventsToStore;
             }
         }
@@ -108,128 +104,28 @@ namespace PostgreSqlDataAccess
         /// Добавить события в буфер
         /// </summary>
         /// <param name="eventsToStore">Коллекция записей, которые нужно добавить</param>
-        public void addEvents (List<ParameterEvent> eventsToStore)
+        public void addEvents (List<TEventType> eventsToStore)
         {
             lock (_eventsLock)
             {
                 _events.AddRange( eventsToStore );
             }
         }
-    }
 
-    /// <summary>
-    /// Класс-контейнер для потока, в котором будет работать GroupRecordsWriteAdapter
-    /// Обеспечивает управляемый останов, с ожиданием самостоятельного завершения потока
-    /// </summary>
-    public class StoreThread
-    {
         /// <summary>
-        /// Возможные состояния потока
+        /// Добавить событие в буфер
         /// </summary>
-        enum StoreThreadStates
+        /// <param name="eventToStore">Запись, которую нужно добавить</param>
+        public void addEvent (TEventType eventToStore)
         {
-            Working,        // Работаем
-            Terminating,    // Пора заканчивать
-            Terminated      // Закончили
-        }
-        /// <summary>
-        /// Текущее состояние потока
-        /// </summary>
-        StoreThreadStates _storeThreadState;
-
-        /// <summary>
-        /// Блокировка для исключения конфликтов чтения-записи состояния потока из разных потоков
-        /// </summary>
-        readonly object _storeThreadStateLock = new object();
-
-        /// <summary>
-        /// Рабочий поток
-        /// </summary>
-        readonly Thread _storeThread;
-
-        /// <summary>
-        /// Объект, содержащий логику рабочего потока
-        /// </summary>
-        readonly ThreadStart _storeLogic;
-
-        /// <summary>
-        /// Конструктор
-        /// </summary>
-        /// <param name="storeLogic">Объект, содержащий логику рабочего потока</param>
-        public StoreThread (ThreadStart storeLogic)
-        {
-            _storeLogic = storeLogic;
-
-            // Создаём рабочий поток
-            _storeThreadState = StoreThreadStates.Working;
-            _storeThread = new Thread( threadMethod );
-
-            // Приоритет назначаем ниже обычного
-            _storeThread.Priority = ThreadPriority.BelowNormal;
-        }
-
-        /// <summary>
-        /// Запуск рабочего потока
-        /// </summary>
-        public void start ()
-        {
-            _storeThread.Start();
-        }
-        /// <summary>
-        /// Сигнализирует потоку, что пора заканчивать
-        /// </summary>
-        public void terminate ()
-        {
-            lock (_storeThreadStateLock)
+            lock (_eventsLock)
             {
-                _storeThreadState = StoreThreadStates.Terminating;
-            }
-        }
-        /// <summary>
-        /// Ожидание завершения потока.
-        /// По истечении таймаута, если таймаут не равен нулю, поток завершается принудительно.
-        /// </summary>
-        /// <param name="timeout">Таймаут останова в секундах.</param>
-        public void waitForTermination (uint timeout = 0)
-        {
-            if (timeout == 0)
-                _storeThread.Join();
-            else {
-                if (!_storeThread.Join( (int)timeout * 1000 ))
-                {
-                    _storeThread.Abort();
-                }
-            }
-        }
-
-        /// <summary>
-        /// Тело рабочего потока
-        /// </summary>
-        void threadMethod ()
-        {
-            StoreThreadStates threadState;
-            do
-            {
-                // Выполняем логику итерации потока
-                _storeLogic.Invoke();
-
-                // И проверяем, не пора ли завершаться
-                lock (_storeThreadStateLock)
-                {
-                    threadState = _storeThreadState;
-                }
-            }
-            while (threadState == StoreThreadStates.Working);
-
-            // После завершения устанавливаем признак, что работа закончена
-            lock (_storeThreadStateLock)
-            {
-                _storeThreadState = StoreThreadStates.Terminated;
+                _events.Add( eventToStore );
             }
         }
     }
 
-    public abstract class GroupRecordsWriteAdapter
+    public abstract class GroupRecordsWriteAdapter : IDisposable
     {
         /// <summary>
         /// Массив потоков добавления записей в БД
@@ -277,17 +173,22 @@ namespace PostgreSqlDataAccess
         /// <summary>
         /// Счетчик ошибок при записи в БД
         /// </summary>
-        protected readonly ThreadSafeCounter ErrorsCounter = new ThreadSafeCounter();
+        protected readonly ThreadSafeCounter ErrorsCounter = new ();
         /// <summary>
         /// Счетчик объектов, ожидающих записи в БД в буфере сохранения
         /// </summary>
-        protected readonly ThreadSafeCounter BufferRemainderCounter = new ThreadSafeCounter();
+        protected readonly ThreadSafeCounter BufferRemainderCounter = new ();
 
         /// <summary>
-        /// Основной поток
+        /// Задание основного потока
         /// </summary>
-        protected readonly StoreThread _storingThread;
+        private readonly Task _storingTask;
 
+        /// <summary>
+        /// Объект для остановки основного потока
+        /// </summary>
+        private readonly CancellationTokenSource _cancellationTokenSource = new();
+        
         /// <summary>
         /// Логика итерации основного потока
         /// </summary>
@@ -305,6 +206,22 @@ namespace PostgreSqlDataAccess
             // Создаём объекты, которые будут выполнять запись объектов в БД
             WritersQuantity = writersQuantity;
             Writers = new AGroupRecordsWriter[WritersQuantity];
+            initWriters( connectionString, insertSize, transactionSize );
+
+            // Создаём и запускаем поток накопления и сохранения
+            _storingTask = Task.Run(() =>
+            {
+                do
+                {
+                    // Выполняем логику итерации потока
+                    storingIteration();
+                }
+                while (!_cancellationTokenSource.IsCancellationRequested);
+            }
+            );
+        }
+        private void initWriters (string connectionString, uint insertSize, uint transactionSize)
+        {
             for (int i = 0; i < WritersQuantity; i++)
             {
                 Writers[i] = createWriter( connectionString, insertSize, transactionSize );
@@ -313,10 +230,6 @@ namespace PostgreSqlDataAccess
                 // В случае ошибок будет увеличен счетчик ошибок
                 Writers[i].OnError += ErrorsCounter.add;
             }
-
-            // Создаём и запускаем поток накопления и сохранения
-            _storingThread = new StoreThread( storingIteration );
-            _storingThread.start();
         }
 
         /// <summary>
@@ -337,5 +250,46 @@ namespace PostgreSqlDataAccess
                 Thread.Sleep( 50 );
             }
         }
+
+        #region Поддержка интерфейса IDisposable, освобождение неуправляемых ресурсов
+
+        private bool disposedValue; // Для определения излишних вызовов, чтобы выполнять Dispose только один раз
+
+        /// <summary>
+        /// Метод, выполняющий освобождение неуправляемых ресурсов
+        /// </summary>
+        /// <param name="disposing">Признак того, что вызов метода выполнен не из финализатора</param>
+        protected virtual void Dispose (bool disposing)
+        {
+            // Если Dispose ещё не вызывался
+            if (!disposedValue)
+            {
+                // Если вызов выполнен не из финализатора
+                if (disposing)
+                {
+                    // Ждем окончания записи буфера сохранения
+                    WaitForStoring();
+
+                    // Сообщаем основному потоку, что надо заканчиваться
+                    _cancellationTokenSource.Cancel();
+                        
+                    // Останавливаем писателей
+                    for (int i = 0; i < WritersQuantity; i++)
+                    {
+                        Writers[i]?.Dispose();
+                    }
+
+                    // Ждём завершения основного потока
+                    _storingTask.Wait();
+                }
+                // Больше не выполнять
+                disposedValue = true;
+            }
+        }
+        public void Dispose ()
+        {
+            Dispose( true );
+        }
+        #endregion
     }
 }

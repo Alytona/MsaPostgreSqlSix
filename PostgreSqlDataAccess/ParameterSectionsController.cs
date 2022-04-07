@@ -5,6 +5,8 @@ using System.Text;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 
+using Sphere;
+
 namespace PostgreSqlDataAccess
 {
 
@@ -55,16 +57,16 @@ namespace PostgreSqlDataAccess
     {
         public readonly ParameterSection ParameterSection;
 
-        public readonly List<ParameterEvent> Events;
+        public readonly List<SphereDataTypesScalarSW_t> Events;
 
         public ParameterValues (ParameterSection parSection)
         {
             ParameterSection = parSection;
 
-            Events = new List<ParameterEvent>();
+            Events = new List<SphereDataTypesScalarSW_t>();
         }
 
-        public int addEvent (ParameterEvent eventData)
+        public int addEvent (SphereDataTypesScalarSW_t eventData)
         {
             Events.Add( eventData );
             return 0;
@@ -106,24 +108,24 @@ namespace PostgreSqlDataAccess
             DbContext = new MonitoringDb( connectionString );
         }
 
-        public void fillParameterSections (List<ParameterEvent> Events)
+        public void fillParameterSections (List<SphereDataTypesScalarSW_t> Events)
         {
             FilledParametersSet.Clear();
-            foreach (ParameterEvent eventData in Events)
+            foreach (SphereDataTypesScalarSW_t eventData in Events)
             {
                 ParameterSection parameterSection;
-                if (!ParametersSet.TryGetValue( eventData.ParameterId, out parameterSection ))
+                if (!ParametersSet.TryGetValue( eventData.var_id, out parameterSection ))
                 {
-                    parameterSection = new ParameterSection( eventData.ParameterId );
-                    ParametersSet.Add( eventData.ParameterId, parameterSection );
+                    parameterSection = new ParameterSection( eventData.var_id );
+                    ParametersSet.Add( eventData.var_id, parameterSection );
                 }
-                parameterSection.addMonth( eventData.Time );
+                parameterSection.addMonth( eventData.timestamp );
 
                 ParameterValues parameterData;
-                if (!FilledParametersSet.TryGetValue( eventData.ParameterId, out parameterData ))
+                if (!FilledParametersSet.TryGetValue( eventData.var_id, out parameterData ))
                 {
                     parameterData = new ParameterValues( parameterSection );
-                    FilledParametersSet.Add( eventData.ParameterId, parameterData );
+                    FilledParametersSet.Add( eventData.var_id, parameterData );
                 }
                 parameterData.addEvent( eventData );
             }
@@ -142,8 +144,10 @@ namespace PostgreSqlDataAccess
                     commandBuilder.AppendLine( "create table if not exists public." + tablename + " (" );
                     commandBuilder.AppendLine( "year_month character( 5 ) COLLATE pg_catalog.\"default\" NOT NULL," );
                     commandBuilder.AppendLine( "event_id SERIAL," );
+                    commandBuilder.AppendLine( "node_id integer," );
+                    commandBuilder.AppendLine( "event_value double precision," );
                     commandBuilder.AppendLine( "event_time timestamp without time zone," );
-                    commandBuilder.AppendLine( "event_value real," );
+                    commandBuilder.AppendLine( "event_counter integer," );
                     commandBuilder.AppendLine( "event_status integer" );
 //                    commandBuilder.AppendLine( "constraint " + tablename + "_pkey PRIMARY KEY( year_month, event_id )" );
                     commandBuilder.AppendLine( ") PARTITION BY RANGE( year_month );" );
