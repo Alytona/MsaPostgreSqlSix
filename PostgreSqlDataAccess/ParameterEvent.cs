@@ -6,6 +6,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using PostgreSqlDataAccess;
+
 namespace PostgreSqlDataAccess
 {
     /// <summary>
@@ -13,9 +15,12 @@ namespace PostgreSqlDataAccess
     /// </summary>
     public interface IGroupInsertableRecord
     {
-        void FillValues (object[] fieldValues, uint valuesIndex);
+        void FillValues(object[] fieldValues, uint valuesIndex);
     }
-
+}
+/*
+namespace PostgreSqlDataAccess_out
+{
     /// <summary>
     /// Класс записи события
     /// </summary>
@@ -25,7 +30,7 @@ namespace PostgreSqlDataAccess
         /// <summary>
         /// Количество колонок
         /// </summary>
-        internal static readonly uint ColumnsQuantity = 4;
+        internal static readonly uint ColumnsQuantity = 6;
         /// <summary>
         /// Начальная часть SQL-оператора добавления записей
         /// </summary>
@@ -37,8 +42,13 @@ namespace PostgreSqlDataAccess
         /// <summary>
         /// Строка формата для заполнения значений одной из вставляемых записей
         /// </summary>
-        internal static readonly string ValuesPartFormat = "(@p{0}, @p{1}, @p{2}, @p{3})";
+        internal static readonly string ValuesPartFormat = "(@p{0}, @p{1}, @p{2}, @p{3}, @p{4}, @p{5})";
 
+        public int NodeId 
+        {
+            get; set;
+        }
+        
         public int ParameterId
         {
             get; set;
@@ -52,16 +62,20 @@ namespace PostgreSqlDataAccess
             get; set;
         }
         /// <summary>
+        /// Значение, ассоциированное с событием
+        /// </summary>
+        public double Value
+        {
+            get; set;
+        }
+        /// <summary>
         /// Время появления события
         /// </summary>
         public DateTime Time
         {
             get; set;
         }
-        /// <summary>
-        /// Значение, ассоциированное с событием
-        /// </summary>
-        public float Value
+        public int Counter
         {
             get; set;
         }
@@ -82,9 +96,11 @@ namespace PostgreSqlDataAccess
         /// <param name="valuesIndex">Индекс в массиве, начиная с которого вписываются значения</param>
         public void FillValues (object[] fieldValues, uint valuesIndex)
         {
-            fieldValues[valuesIndex + 1] = Time;
+            fieldValues[valuesIndex + 1] = NodeId;
             fieldValues[valuesIndex + 2] = Value;
-            fieldValues[valuesIndex + 3] = Status;
+            fieldValues[valuesIndex + 3] = Time;
+            fieldValues[valuesIndex + 4] = Counter;
+            fieldValues[valuesIndex + 5] = Status;
         }
     }
 
@@ -122,7 +138,7 @@ namespace PostgreSqlDataAccess
 
         protected override StringBuilder makeQueryBuilder ()
         {
-            StringBuilder queryBuilder = new StringBuilder( "insert into \"var_" + ParameterId + "\" (year_month, event_time, event_value, event_status) values " );
+            StringBuilder queryBuilder = new StringBuilder( "insert into \"var_" + ParameterId + "\" (year_month, node_id, event_value, event_time, event_counter, event_status) values " );
             return queryBuilder;
         }
 
@@ -169,3 +185,4 @@ namespace PostgreSqlDataAccess
         }
     }
 }
+*/
