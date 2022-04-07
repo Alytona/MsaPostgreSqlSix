@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 
 using Sphere;
@@ -84,24 +83,11 @@ namespace PostgreSqlDataAccess
         /// <summary>
         /// Объект модели БД
         /// </summary>
-        MonitoringDb DbContext;
+        private readonly MonitoringDb DbContext;
 
-        /// <summary>
-        /// Признак того, что подключение к БД установлено
-        /// </summary>
-        bool DbInited = false;
+        public readonly Dictionary<int, ParameterValues> FilledParametersSet = new ();
 
-        /// <summary>
-        /// Строка подключения к БД
-        /// </summary>
-        public string ConnectionString
-        {
-            get; private set;
-        }
-
-        public readonly Dictionary<int, ParameterValues> FilledParametersSet = new Dictionary<int, ParameterValues>();
-
-        readonly Dictionary<int, ParameterSection> ParametersSet = new Dictionary<int, ParameterSection>();
+        readonly Dictionary<int, ParameterSection> ParametersSet = new ();
 
         public ParameterSectionsController (string connectionString)
         {
@@ -113,16 +99,14 @@ namespace PostgreSqlDataAccess
             FilledParametersSet.Clear();
             foreach (SphereDataTypesScalarSW_t eventData in Events)
             {
-                ParameterSection parameterSection;
-                if (!ParametersSet.TryGetValue( eventData.var_id, out parameterSection ))
+                if (!ParametersSet.TryGetValue( eventData.var_id, out ParameterSection parameterSection ))
                 {
                     parameterSection = new ParameterSection( eventData.var_id );
                     ParametersSet.Add( eventData.var_id, parameterSection );
                 }
                 parameterSection.addMonth( eventData.timestamp );
 
-                ParameterValues parameterData;
-                if (!FilledParametersSet.TryGetValue( eventData.var_id, out parameterData ))
+                if (!FilledParametersSet.TryGetValue( eventData.var_id, out ParameterValues parameterData ))
                 {
                     parameterData = new ParameterValues( parameterSection );
                     FilledParametersSet.Add( eventData.var_id, parameterData );
@@ -151,7 +135,7 @@ namespace PostgreSqlDataAccess
                     commandBuilder.AppendLine( "event_status integer" );
 //                    commandBuilder.AppendLine( "constraint " + tablename + "_pkey PRIMARY KEY( year_month, event_id )" );
                     commandBuilder.AppendLine( ") PARTITION BY RANGE( year_month );" );
-                    int result = DbContext.Database.ExecuteSqlRaw( commandBuilder.ToString() );
+                    DbContext.Database.ExecuteSqlRaw( commandBuilder.ToString() );
                 }
 
                 int[] newMonths = parameterData.ParameterSection.getNewMonths();
@@ -166,14 +150,14 @@ namespace PostgreSqlDataAccess
                     commandBuilder.Clear();
                     commandBuilder.AppendLine( "create table if not exists " + tablename + "_" + monthString );
                     commandBuilder.AppendLine( "PARTITION OF " + tablename + " FOR VALUES FROM ('" + monthString + "') TO ('" + nextMonthString + "');" );
-                    int result = DbContext.Database.ExecuteSqlRaw( commandBuilder.ToString() );
+                    DbContext.Database.ExecuteSqlRaw( commandBuilder.ToString() );
                 }
             }
         }
 
         #region Поддержка интерфейса IDisposable, освобождение неуправляемых ресурсов
 
-        private bool disposedValue = false; // Для определения излишних вызовов, чтобы выполнять Dispose только один раз
+        private bool disposedValue; // Для определения излишних вызовов, чтобы выполнять Dispose только один раз
 
         /// <summary>
         /// Метод, выполняющий освобождение неуправляемых ресурсов
