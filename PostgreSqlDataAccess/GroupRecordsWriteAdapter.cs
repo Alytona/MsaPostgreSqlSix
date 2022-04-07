@@ -6,57 +6,6 @@ using System.Threading.Tasks;
 namespace PostgreSqlDataAccess
 {
     /// <summary>
-    /// Потокобезопасный счетчик остатка для буфера записи
-    /// </summary>
-    public class ThreadSafeCounter
-    {
-        /// <summary>
-        /// Блокировка для потокобезопасного доступа к счетчику
-        /// </summary>
-        readonly object ValueLock = new object();
-
-        /// <summary>
-        /// Значение счётчика
-        /// </summary>
-        public uint _value;
-
-        /// <summary>
-        /// Свойство, обеспечивающее потокобезопасный доступ к счетчику
-        /// </summary>
-        public uint Value
-        {
-            get {
-                lock (ValueLock) { return _value; }
-            }
-            set {
-                lock (ValueLock) { _value = value; }
-            }
-        }
-
-        /// <summary>
-        /// Вычесть заданное количество из счётчика
-        /// </summary>
-        /// <param name="quantity">Количество, которое следует вычесть из счётчика</param>
-        public void subtract (uint quantity)
-        {
-            lock (ValueLock) { 
-                _value -= quantity; 
-            }
-        }
-        /// <summary>
-        /// Добавить заданное количество к счётчику
-        /// </summary>
-        /// <param name="quantity">Количество, которое следует добавить к счётчику</param>
-        public void add (uint quantity)
-        {
-            lock (ValueLock)
-            {
-                _value += quantity;
-            }
-        }
-    }
-
-    /// <summary>
     /// Потокобезопасный буфер, в котором события накапливаются перед записью
     /// </summary>
     class EventsPrepareBuffer<TEventType>
@@ -65,22 +14,11 @@ namespace PostgreSqlDataAccess
         /// Коллекция, в которой хранятся записи буфера
         /// </summary>
         private List<TEventType> _events = new();
-        /// <summary>
-        /// Блокировка для потокобезопасного доступа к буферу
-        /// </summary>
-        readonly object _eventsLock = new();
 
         /// <summary>
         /// Количество записей в буфере
         /// </summary>
-        public uint Length
-        {
-            get
-            {
-                lock (_eventsLock)
-                    return (uint)_events.Count;
-            }
-        }
+        public uint Length => (uint)_events.Count;
 
         /// <summary>
         /// Метод создаёт новый буфер событий и возвращает ссылку на старый
@@ -90,15 +28,12 @@ namespace PostgreSqlDataAccess
         /// <returns>Ссылка на старый буфер</returns>
         public List<TEventType> replaceBufferIfNotEmpty ()
         {
-            lock (_eventsLock)
-            {
-                if (_events.Count == 0)
-                    return null;
+            if (_events.Count == 0)
+                return null;
 
-                List<TEventType> eventsToStore = _events;
-                _events = new List<TEventType>();
-                return eventsToStore;
-            }
+            List<TEventType> eventsToStore = _events;
+            _events = new List<TEventType>( eventsToStore.Count );
+            return eventsToStore;
         }
         /// <summary>
         /// Добавить события в буфер
@@ -106,10 +41,7 @@ namespace PostgreSqlDataAccess
         /// <param name="eventsToStore">Коллекция записей, которые нужно добавить</param>
         public void addEvents (List<TEventType> eventsToStore)
         {
-            lock (_eventsLock)
-            {
-                _events.AddRange( eventsToStore );
-            }
+            _events.AddRange( eventsToStore );
         }
 
         /// <summary>
@@ -118,10 +50,7 @@ namespace PostgreSqlDataAccess
         /// <param name="eventToStore">Запись, которую нужно добавить</param>
         public void addEvent (TEventType eventToStore)
         {
-            lock (_eventsLock)
-            {
-                _events.Add( eventToStore );
-            }
+            _events.Add( eventToStore );
         }
     }
 
@@ -173,11 +102,11 @@ namespace PostgreSqlDataAccess
         /// <summary>
         /// Счетчик ошибок при записи в БД
         /// </summary>
-        protected readonly ThreadSafeCounter ErrorsCounter = new ();
+        protected int ErrorsCounter;
         /// <summary>
         /// Счетчик объектов, ожидающих записи в БД в буфере сохранения
         /// </summary>
-        protected readonly ThreadSafeCounter BufferRemainderCounter = new ();
+        protected int BufferRemainderCounter;
 
         /// <summary>
         /// Задание основного потока
@@ -226,9 +155,9 @@ namespace PostgreSqlDataAccess
             {
                 Writers[i] = createWriter( connectionString, insertSize, transactionSize );
                 // Когда писатель запишет порцию в БД, счетчик оставшихся записей будет уменьшен на количество записанных
-                Writers[i].OnStored += BufferRemainderCounter.subtract;
+                Writers[i].OnStored += (value) => Interlocked.Add( ref BufferRemainderCounter, -(int)value );    
                 // В случае ошибок будет увеличен счетчик ошибок
-                Writers[i].OnError += ErrorsCounter.add;
+                Writers[i].OnError += (value) => Interlocked.Add( ref ErrorsCounter, (int)value ); 
             }
         }
 
@@ -246,9 +175,8 @@ namespace PostgreSqlDataAccess
         /// </summary>
         public void WaitForStoring ()
         {
-            while (Storing) {
-                Thread.Sleep( 50 );
-            }
+            while (Storing)
+                Task.Delay( 50 ).Wait();
         }
 
         #region Поддержка интерфейса IDisposable, освобождение неуправляемых ресурсов

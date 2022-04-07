@@ -79,7 +79,7 @@ namespace PostgreSqlDataAccess
                 Storing = true;
 
                 // Инициализируем количество несохраненных записей в буфере сохранения
-                BufferRemainderCounter.Value = totalEventsQuantity; 
+                BufferRemainderCounter = (int)totalEventsQuantity; 
                 List<Exception> errors = new List<Exception>();
 
                 SectionsController.fillParameterSections( eventsToStore );
@@ -150,8 +150,8 @@ namespace PostgreSqlDataAccess
                 }
 
                 // Если по каким-то причинам что-то осталось в буфере сохранения, сообщаем об этом
-                if (BufferRemainderCounter.Value != 0)
-                    Console.WriteLine( "BufferRemainderCounter.Remainder: " + BufferRemainderCounter.Value );
+                if (BufferRemainderCounter != 0)
+                    Console.WriteLine( "BufferRemainderCounter.Remainder: " + BufferRemainderCounter );
             }
         }
 
@@ -162,12 +162,12 @@ namespace PostgreSqlDataAccess
         public uint GetQueueLength ()
         {
             // Считается как количество записей в накопительном буфере и в сохраняемом буфере, минус количество ошибок записи
-            return PrepareBuffer.Length + BufferRemainderCounter.Value - ErrorsCounter.Value;
+            return (uint)(PrepareBuffer.Length + BufferRemainderCounter - ErrorsCounter);
         }
 
         public uint PreparedLen => PrepareBuffer.Length;
-        public uint StoringQueueLen => BufferRemainderCounter.Value;
-        public uint ErrorsQuantity => ErrorsCounter.Value;
+        public uint StoringQueueLen => (uint)BufferRemainderCounter;
+        public uint ErrorsQuantity => (uint)ErrorsCounter;
 
         /// <summary>
         /// Добавляет записи в накопительный буфер
