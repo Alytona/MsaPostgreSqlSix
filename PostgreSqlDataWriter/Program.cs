@@ -74,6 +74,7 @@ namespace PostgreSqlDataWriter
                 int controlEventsCounter = 0;
 
                 DateTime startTime;
+                DateTime endTime;
                 try
                 {
                     // Создаём объект, который будет выполнять добавление событий в БД
@@ -121,7 +122,7 @@ namespace PostgreSqlDataWriter
                         }
 
                         // пауза между циклами генерации данных
-                        Task.Delay( 10 ).Wait();
+                        Task.Delay( 20 ).Wait();
                     }
 
                     Console.Write(DateTime.Now.ToString("HH:mm:ss.fff "));
@@ -134,6 +135,10 @@ namespace PostgreSqlDataWriter
                     Console.Write(DateTime.Now.ToString("HH:mm:ss.fff "));
                     
                     writeAdapter?.WaitForStoring();
+                    Console.WriteLine("All was written.");
+
+                    // Замеряем время окончания добавления
+                    endTime = DateTime.Now;
 
                     // Считаем, сколько записей теперь в таблице.
                     // Тоже может занять значительное время, так как записей может быть очень много.
@@ -150,8 +155,6 @@ namespace PostgreSqlDataWriter
                     logger?.Dispose();
                 }
 
-                // Замеряем время окончания добавления
-                DateTime endTime = DateTime.Now;
                 Console.WriteLine("Writing duration is " + (endTime - startTime).TotalMilliseconds + " milliseconds.");
 
                 // Всего записей в таблице
@@ -199,6 +202,8 @@ namespace PostgreSqlDataWriter
         /// </summary>
         private static void logQueueLen (uint preparedQueueLen, uint storingQueueLen, uint errorsQuantity )
         {
+            if (preparedQueueLen == 0 && storingQueueLen == 0 && errorsQuantity == 0)
+                return;
             Console.Write( DateTime.Now.ToString( "HH:mm:ss.fff " ) );
             // Console.WriteLine( "Queue length is " + (preparedQueueLen + storingQueueLen - errorsQuantity));
             Console.WriteLine( "Prepared events : " + preparedQueueLen + ", storing events : " + storingQueueLen + ", errors : " + errorsQuantity );
